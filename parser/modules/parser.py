@@ -1,6 +1,7 @@
 import ujson as json # для распаковки/упаковки объектов (прокачанная версия)
 import time # для слипов
 from selenium import webdriver # для открытия сайта целевого в браузере в headless режиме
+from selenium.common.exceptions import TimeoutException # для отслеживания таймаута веб-драйвера
 import requests # для получения данных с url-источников
 from datetime import datetime # для перевода timestamp-меток в нормальный формат
 import pandas as pd # для удобного преобразования в xlsx
@@ -38,10 +39,15 @@ class URL_Parser():
         options.add_argument("--headless=new")
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
         driver = webdriver.Chrome(options=options)
+        driver.set_page_load_timeout(self._connection_timeout) # таймаут именно для загрузки страницы
         try:
             # отлавливание запросов
-            driver.execute_cdp_cmd("Network.enable", {})
-            driver.get(self._parent_url)
+            try:
+                driver.execute_cdp_cmd("Network.enable", {})
+                driver.get(self._parent_url)
+            except TimeoutException:
+                self._logger.error("Timeout error while connecting to host")
+                return []
             self._logger.info(f"Wait {self._delay} sec")
             # та самая задержка 
             time.sleep(self._delay)
@@ -144,14 +150,14 @@ class URL_Parser():
         df = pd.DataFrame(log_dict)
         df["scheduled"] = pd.to_datetime(df["scheduled"])
         df = df.sort_values("scheduled") # сортировка по времени старта
-        with pd.ExcelWriter("./parser_results.xlsx", engine="xlsxwriter") as writer:
+        with pd.ExcelWriter("./res_logs/parser_results.xlsx", engine="xlsxwriter") as writer:
             df.to_excel(writer, sheet_name="sheet_1", index=False)
             worksheet = writer.sheets["sheet_1"]
             # форматирование таблицы по визуалу
             for i, col in enumerate(df.columns):
                 max_len = max(df[col].astype(str).map(len).max(), len(col))
                 worksheet.set_column(i, i, max_len + 2)
-        self._logger.info("Log is saved into ./parser_results.xlsx")
+        self._logger.info("Log is saved into ./res_logs/parser_results.xlsx")
         return
     
     # главная точка входа в класс

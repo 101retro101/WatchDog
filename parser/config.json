@@ -4,5 +4,5 @@
     "url_pattern": "https://demoapi.betby.com/api/v4/live/brand/",
     "delay": 5,
     "log_to_file": false,
-    "connection_time_out": 60
+    "connection_timeout": 60
 }
