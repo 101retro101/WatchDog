@@ -15,8 +15,14 @@ def update_elem(elem_1:dict, elem_2:dict) -> dict:
         if not(elem_2[key] == None):
             new_elem[key] = elem_2[key]
     for key in score_keys:
-        if not(elem_2[key] == 0):
+        if not(elem_2[key] == 0) and (elem_1[key] <= elem_2[key]):
             new_elem[key] = elem_2[key]
+    date_1 = datetime.strptime(elem_1["scheduled"], "%Y-%m-%d %H:%M:%S")
+    date_2 = datetime.strptime(elem_2["scheduled"], "%Y-%m-%d %H:%M:%S")
+    if date_1 < date_2:
+        new_elem["scheduled"] = elem_1["scheduled"]
+    else:
+        new_elem["scheduled"] = elem_2["scheduled"]
     return new_elem
 
 # класс парсера целевого сайта
@@ -150,7 +156,7 @@ class URL_Parser():
         df = pd.DataFrame(log_dict)
         df["scheduled"] = pd.to_datetime(df["scheduled"])
         df = df.sort_values("scheduled") # сортировка по времени старта
-        with pd.ExcelWriter("./res_logs/parser_results.xlsx", engine="xlsxwriter") as writer:
+        with pd.ExcelWriter(f"./res_logs/parser_results.xlsx", engine="xlsxwriter") as writer:
             df.to_excel(writer, sheet_name="sheet_1", index=False)
             worksheet = writer.sheets["sheet_1"]
             # форматирование таблицы по визуалу
