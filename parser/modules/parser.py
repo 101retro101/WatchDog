@@ -100,7 +100,8 @@ class URL_Parser():
                 if event and "desc" in event.keys(): # в dedsc хранится описание матча - кто играет и на какое время запланировано
                     if event["desc"]["sport"] in sport_keys:
                         competition = { # итоговый объект для сохранения в БД
-                            "id": int(event_id), # айди матча
+                            "time": datetime.now(),
+                            "id": event_id, # айди матча
                             "scheduled": datetime.fromtimestamp(event["desc"]["scheduled"]).strftime("%Y-%m-%d %H:%M:%S"), # время старта
                             "player_1": event["desc"]["competitors"][0]["name"], # игрок 1
                             "player_2": event["desc"]["competitors"][1]["name"], # игрок 2
@@ -138,6 +139,7 @@ class URL_Parser():
     def write_log(self, data:list) -> None:
         self._logger.warning("Log saving is started. Don't close the program")
         log_dict = {
+            "time": [],
             "id": [],
             "scheduled": [],
             "player_1": [],
@@ -154,6 +156,7 @@ class URL_Parser():
             for key in d.keys():
                 log_dict[key].append(d[key])
         df = pd.DataFrame(log_dict)
+        df["time"] = pd.to_datetime(df["time"])
         df["scheduled"] = pd.to_datetime(df["scheduled"])
         df = df.sort_values("scheduled") # сортировка по времени старта
         with pd.ExcelWriter(f"./res_logs/parser_results.xlsx", engine="xlsxwriter") as writer:
@@ -176,7 +179,7 @@ class URL_Parser():
             if c:
                 self._competitions_all += c
         
-        # отсеивание дубликатов (обновление старых элементов новыми)
+        #отсеивание дубликатов (обновление старых элементов новыми)
         by_id = {}
         for c in self._competitions_all:
             c_id = c["id"]
