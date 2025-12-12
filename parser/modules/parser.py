@@ -182,6 +182,11 @@ class URL_Parser():
         #отсеивание дубликатов (обновление старых элементов новыми)
         by_id = {}
         for c in self._competitions_all:
+            scores = ["score_per_1_home","score_per_1_away", "res_score_home", "res_score_away"]
+            score_summ = 0
+            for key in scores:
+                score_summ += c[key]
+            if score_summ == 0: continue
             c_id = c["id"]
             if c_id in by_id.keys(): 
                 new_elem = update_elem(elem_1=by_id[c_id], elem_2=c)
