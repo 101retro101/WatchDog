@@ -3,6 +3,6 @@
     "parent_url": "https://demo.betby.com/sportsbook/classic/live/esoccer-300",
     "url_pattern": "https://demoapi.betby.com/api/v4/live/brand/",
     "delay": 5,
-    "log_to_file": true,
+    "log_to_file": false,
     "connection_timeout": 60
 }
