@@ -16,29 +16,31 @@ class URL_Parser():
         self._logger = logger 
         self._competitions_all = []
         self._connection_timeout = connection_timeout
-        return 
-    
-    # получает все запросы сайта к внешним ресурсам
-    def _get_live_urls(self) -> list:
-        # инициализация браузера
+        self._log_is_start = False
+
+        # один webdriver на весь объект
         options = webdriver.ChromeOptions()
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--headless=new")
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
-        driver = webdriver.Chrome(options=options)
-        driver.set_page_load_timeout(self._connection_timeout) # таймаут именно для загрузки страницы
+        self._driver = webdriver.Chrome(options=options)
+        self._driver.set_page_load_timeout(self._connection_timeout)
+        return 
+    
+    # получает все запросы сайта к внешним ресурсам
+    def _get_live_urls(self) -> list:
         try:
             # отлавливание запросов
             try:
-                driver.execute_cdp_cmd("Network.enable", {})
-                driver.get(self._parent_url)
+                self._driver.execute_cdp_cmd("Network.enable", {})
+                self._driver.get(self._parent_url)
             except TimeoutException:
                 self._logger.error("Timeout error while connecting to host")
                 return []
             self._logger.info(f"Wait {self._delay} sec")
             # та самая задержка 
             time.sleep(self._delay)
-            logs = driver.get_log("performance")
+            logs = self._driver.get_log("performance")
             urls = set() # создание сета для хранения уникальных значений
             for entry in logs:
                 msg = json.loads(entry["message"])["message"]
@@ -52,17 +54,15 @@ class URL_Parser():
             for url in urls:
                 if self._url_pattern in url: score_urls.append(url)
         except Exception as e:
-            self._logger.error(f"Error while connecting remote host")
-            return []
-        finally:
-            driver.quit()        
+            self._logger.error(f"Error while connecting remote host, {e}")
+            return []       
         return score_urls
     
-    def _is_this_event(self, event_id:int) -> bool:
-        for event in self._competitions_all:
+    def _is_this_event(self, event_id:int) -> int | None:
+        for event_index, event in enumerate(self._competitions_all):
             if event_id == event["id"]: 
-                return True 
-        return False
+                return event_index 
+        return None
     
     # вытасиквает данные с переданного url
     def get_data_from_url(self, url:str) -> None:
@@ -84,6 +84,7 @@ class URL_Parser():
                     sport_keys.append(key)
             for event_id in url_data["events"].keys(): # в events хранится информация о матчах
                 event = url_data["events"][event_id]
+                is_this_event = self._is_this_event(event_id=event_id)
                 competition = { # итоговый объект для сохранения в БД
                     "time": datetime.now(),
                     "id": event_id, # айди матча
@@ -99,54 +100,48 @@ class URL_Parser():
                     competition["scheduled"] = datetime.fromtimestamp(event["desc"]["scheduled"]).strftime("%Y-%m-%d %H:%M:%S")
                     competition['player_1'] = event["desc"]["competitors"][0]["name"]
                     competition["player_2"] = event["desc"]["competitors"][1]["name"]
-                    if not self._is_this_event(event_id=event_id):
+                    if is_this_event:
+                        pass
+                    else:
                         self._competitions_all.append(competition)
                 
                 # обработка голов
-                if event and ("score" in event.keys()) and (self._is_this_event(event_id=event_id)):
-                    for event_index, event_competition in enumerate(self._competitions_all):
-                        if event_id == event_competition["id"]:
-                            if len(event["score"]["period_scores"]) > 0: 
-                                self._competitions_all[event_index]["score_per_1_home"] = event["score"]["period_scores"][0]["home_score"]
-                                self._competitions_all[event_index]["score_per_1_away"] = event["score"]["period_scores"][0]["away_score"]
-                            self._competitions_all[event_index]["res_score_home"] = int(event["score"]["home_score"])
-                            self._competitions_all[event_index]["res_score_away"] = int(event["score"]["away_score"])
+                if event and ("score" in event.keys()) and (is_this_event):
+                    if len(event["score"]["period_scores"]) > 0: 
+                        self._competitions_all[is_this_event]["score_per_1_home"] = event["score"]["period_scores"][0]["home_score"]
+                        self._competitions_all[is_this_event]["score_per_1_away"] = event["score"]["period_scores"][0]["away_score"]
+                    self._competitions_all[is_this_event]["res_score_home"] = int(event["score"]["home_score"])
+                    self._competitions_all[is_this_event]["res_score_away"] = int(event["score"]["away_score"])    
         return None
     
-    # записывает собранные данные в файл
-    def write_log(self, data:list) -> None:
+    def write_log(self,  data:list) -> None:
         self._logger.warning("Log saving is started. Don't close the program")
-        log_dict = {
-            "time": [],
-            "id": [],
-            "scheduled": [],
-            "player_1": [],
-            "player_2": [],
-            "score_per_1_home": [],
-            "score_per_1_away":[],
-            "res_score_home": [],
-            "res_score_away": []
-        }
-        for d in data:
-            for key in d.keys():
-                log_dict[key].append(d[key])
-        df = pd.DataFrame(log_dict)
-        df["time"] = pd.to_datetime(df["time"])
-        df["scheduled"] = pd.to_datetime(df["scheduled"])
-        df = df.sort_values("scheduled") # сортировка по времени старта
-        with pd.ExcelWriter(f"./res_logs/parser_results.xlsx", engine="xlsxwriter") as writer:
-            df.to_excel(writer, sheet_name="sheet_1", index=False)
-            worksheet = writer.sheets["sheet_1"]
-            # форматирование таблицы по визуалу
-            for i, col in enumerate(df.columns):
-                max_len = max(df[col].astype(str).map(len).max(), len(col))
-                worksheet.set_column(i, i, max_len + 2)
-        self._logger.info("Log is saved into ./res_logs/parser_results.xlsx")
-        return
+        
+        csv_path = "./res_logs/parser_results.csv"
+        headers = ["time", "id", "scheduled", "player_1", "player_2", "score_per_1_home", "score_per_1_away", "res_score_home", "res_score_away"]
+        
+        # пишем батчами по 1000 строк
+        batch_size = 1000
+        batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+        
+        for batch in batches:
+            # создаём маленький DataFrame только для батча
+            log_dict = {h: [d.get(h) for d in batch] for h in headers}
+            df_batch = pd.DataFrame(log_dict)
+
+            # конвертируем datetime только для батча
+            df_batch["time"] = pd.to_datetime(df_batch["time"])
+            df_batch["scheduled"] = pd.to_datetime(df_batch["scheduled"])
+            df_batch = df_batch.sort_values("scheduled")
+            
+            # append в CSV с точкой с запятой
+            df_batch.to_csv(csv_path, sep=";", index=False, mode='w', header=(not pd.io.common.file_exists(csv_path)), encoding="utf-8-sig")
+        
+        self._logger.info(f"Log saved to {csv_path} ({len(data)} rows)")
     
     # главная точка входа в класс
     def main(self) -> None:
-        self._logger.info("Parser is started")
+        self._logger.info("Parser iteration is started")
         urls = self._get_live_urls()
         for u_index, url in enumerate(urls):
             self._logger.info(f"Doing {u_index}/{len(urls)-1}")
