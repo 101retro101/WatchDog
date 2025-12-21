@@ -19,18 +19,18 @@ class URL_Parser():
         self._log_is_start = False
 
         # один webdriver на весь объект
-        options = webdriver.ChromeOptions()
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--headless=new")
-        options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
-        self._driver = webdriver.Chrome(options=options)
-        self._driver.set_page_load_timeout(self._connection_timeout)
         return 
     
     # получает все запросы сайта к внешним ресурсам
     def _get_live_urls(self) -> list:
         try:
             # отлавливание запросов
+            options = webdriver.ChromeOptions()
+            options.add_argument("--window-size=1920,1080")
+            options.add_argument("--headless=new")
+            options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
+            self._driver = webdriver.Chrome(options=options)
+            self._driver.set_page_load_timeout(self._connection_timeout)
             try:
                 self._driver.execute_cdp_cmd("Network.enable", {})
                 self._driver.get(self._parent_url)
@@ -56,6 +56,8 @@ class URL_Parser():
         except Exception as e:
             self._logger.error(f"Error while connecting remote host, {e}")
             return []       
+        finally:
+            self._driver.quit()
         return score_urls
     
     def _is_this_event(self, event_id:int) -> int | None:
