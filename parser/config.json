@@ -1,8 +1,8 @@
 {
-    "api_key": "281341d699mshd1ab3d062487349p174620jsn1d055a52a677",
     "parent_url": "https://demo.betby.com/sportsbook/classic/live/esoccer-300",
     "url_pattern": "https://demoapi.betby.com/api/v4/live/brand/",
     "delay": 5,
-    "log_to_file": false,
-    "connection_timeout": 60
+    "log_to_file": true,
+    "connection_timeout": 60,
+    "time_for_reset": 5400
 }

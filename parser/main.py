@@ -22,7 +22,8 @@ def main() -> None:
         delay=config["delay"],
         url_pattern=config["url_pattern"],
         logger=logger,
-        connection_timeout=config["connection_timeout"]
+        connection_timeout=config["connection_timeout"],
+        time_for_reset=config["time_for_reset"]
     )
     # чтобы парсер работал бесконечно
     while True:

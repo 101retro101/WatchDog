@@ -9,7 +9,7 @@ import pandas as pd # для удобного преобразования в xl
 # класс парсера целевого сайта
 class URL_Parser():
     # функция инициализации класса парсера
-    def __init__(self, parent_url:str, delay:int, url_pattern:str, logger:object, connection_timeout:int) -> None:
+    def __init__(self, parent_url:str, delay:int, url_pattern:str, logger:object, connection_timeout:int, time_for_reset:int) -> None:
         self._parent_url = parent_url # ссылка на первоначальный сайт
         self._url_pattern = url_pattern # что должен содержать url, чтобы подходить под шаблон целевого
         self._delay = delay # временная задержка
@@ -17,8 +17,8 @@ class URL_Parser():
         self._competitions_all = []
         self._connection_timeout = connection_timeout
         self._log_is_start = False
-
-        # один webdriver на весь объект
+        self.start_time = time.time()
+        self.time_for_reset = time_for_reset
         return 
     
     # получает все запросы сайта к внешним ресурсам
@@ -34,8 +34,8 @@ class URL_Parser():
             try:
                 self._driver.execute_cdp_cmd("Network.enable", {})
                 self._driver.get(self._parent_url)
-            except TimeoutException:
-                self._logger.error("Timeout error while connecting to host")
+            except TimeoutException as e:
+                self._logger.error(f"Error while connecting to host, {e}")
                 return []
             self._logger.info(f"Wait {self._delay} sec")
             # та самая задержка 
@@ -62,7 +62,7 @@ class URL_Parser():
     
     def _is_this_event(self, event_id:int) -> int | None:
         for event_index, event in enumerate(self._competitions_all):
-            if event_id == event["id"]: 
+            if int(event_id) == int(event["id"]): 
                 return event_index 
         return None
     
@@ -71,8 +71,8 @@ class URL_Parser():
         url_data = {}
         try:
             url_data = requests.get(url, timeout=self._connection_timeout).json() # получает пакет данных
-        except requests.Timeout: # обработка ошибки долгого ожидания
-            self._logger.error("Time for request is out. Bad connection") 
+        except requests.Timeout as e: # обработка ошибки долгого ожидания
+            self._logger.error(f"Time for request is out. Bad connection. {e}") 
             return None
         except requests.RequestException as e: # обработка ошибка bad request
             self._logger.error(f"Error while connecting with remote host. Bad connection, {e}")
@@ -102,10 +102,9 @@ class URL_Parser():
                     competition["scheduled"] = datetime.fromtimestamp(event["desc"]["scheduled"]).strftime("%Y-%m-%d %H:%M:%S")
                     competition['player_1'] = event["desc"]["competitors"][0]["name"]
                     competition["player_2"] = event["desc"]["competitors"][1]["name"]
-                    if is_this_event:
-                        pass
-                    else:
+                    if is_this_event is None:
                         self._competitions_all.append(competition)
+                        
                 
                 # обработка голов
                 if event and ("score" in event.keys()) and (is_this_event):
@@ -119,27 +118,33 @@ class URL_Parser():
     def write_log(self,  data:list) -> None:
         self._logger.warning("Log saving is started. Don't close the program")
         
-        csv_path = "./res_logs/parser_results.csv"
+        csv_path = f"./res_logs/parser_results_{self.start_time}.csv"
         headers = ["time", "id", "scheduled", "player_1", "player_2", "score_per_1_home", "score_per_1_away", "res_score_home", "res_score_away"]
         
-        # пишем батчами по 1000 строк
-        batch_size = 1000
-        batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+        log_dict = {h: [d.get(h) for d in data] for h in headers}
+        df = pd.DataFrame(log_dict)
         
-        for batch in batches:
-            # создаём маленький DataFrame только для батча
-            log_dict = {h: [d.get(h) for d in batch] for h in headers}
-            df_batch = pd.DataFrame(log_dict)
+        df["time"] = pd.to_datetime(df["time"])
+        df["scheduled"] = pd.to_datetime(df["scheduled"])
+        df = df.sort_values("scheduled")
 
-            # конвертируем datetime только для батча
-            df_batch["time"] = pd.to_datetime(df_batch["time"])
-            df_batch["scheduled"] = pd.to_datetime(df_batch["scheduled"])
-            df_batch = df_batch.sort_values("scheduled")
-            
-            # append в CSV с точкой с запятой
-            df_batch.to_csv(csv_path, sep=";", index=False, mode='w', header=(not pd.io.common.file_exists(csv_path)), encoding="utf-8-sig")
-        
+        df.to_csv(
+            csv_path,
+            sep=";",
+            index=False,
+            header=(not pd.io.common.file_exists(csv_path)),
+            encoding="utf-8-sig"
+        )
         self._logger.info(f"Log saved to {csv_path} ({len(data)} rows)")
+
+        return 
+
+    # освобождает память от старых записей и изменяет метку времени
+    def _reset_parser(self) -> None:
+        self._competitions_all = []
+        self.start_time = time.time()        
+        self._logger.warning("Pareser is reseted")
+        return 
     
     # главная точка входа в класс
     def main(self) -> None:
@@ -148,8 +153,11 @@ class URL_Parser():
         for u_index, url in enumerate(urls):
             self._logger.info(f"Doing {u_index}/{len(urls)-1}")
             self.get_data_from_url(url=url)
-        
         self.write_log(data=self._competitions_all)
+        
+        # освобождение памяти для новых записей
+        if time.time() - self.start_time > self.time_for_reset:
+            self._reset_parser()
         return
 
 # точка входа в программу
