@@ -8,6 +8,9 @@ import pandas as pd # для удобного преобразования в xl
 
 # класс парсера целевого сайта
 class URL_Parser():
+    '''
+    Главынй модуль программы для парсинга данных со страницы
+    '''
     # функция инициализации класса парсера
     def __init__(self, parent_url:str, delay:int, url_pattern:str, logger:object, connection_timeout:int, time_for_reset:int) -> None:
         self._parent_url = parent_url # ссылка на первоначальный сайт
@@ -23,6 +26,11 @@ class URL_Parser():
     
     # получает все запросы сайта к внешним ресурсам
     def _get_live_urls(self) -> list:
+        '''
+        Собирает все активные запросы со страницы в течении определенного delay
+        и фильтрует их по шаблонной строке
+        :return: список целевых запросов, а именно их url
+        '''
         try:
             # отлавливание запросов
             options = webdriver.ChromeOptions()
@@ -61,6 +69,11 @@ class URL_Parser():
         return score_urls
     
     def _is_this_event(self, event_id:int) -> int | None:
+        '''
+        Проверяет есть ли элемент с айди event_id в памяти
+        :param event_id: айди целевого ивента
+        :return: индекс ивента в общем списке или ничего
+        '''
         for event_index, event in enumerate(self._competitions_all):
             if int(event_id) == int(event["id"]): 
                 return event_index 
@@ -68,6 +81,11 @@ class URL_Parser():
     
     # вытасиквает данные с переданного url
     def get_data_from_url(self, url:str) -> None:
+        '''
+        вытягивает всю необходимую информацию из запроса, формирует пакет с competition
+        и добавляет его в общий список в памяти
+        :param url: строка с url запроса
+        '''
         url_data = {}
         try:
             url_data = requests.get(url, timeout=self._connection_timeout).json() # получает пакет данных
@@ -116,6 +134,10 @@ class URL_Parser():
         return None
     
     def write_log(self,  data:list) -> None:
+        '''
+        Записывает собранную информацию в журнал - лог
+        :param data: список все событий, собранных парсером
+        '''
         self._logger.warning("Log saving is started. Don't close the program")
         
         csv_path = f"./res_logs/parser_results_{self.start_time}.csv"
@@ -141,6 +163,9 @@ class URL_Parser():
 
     # освобождает память от старых записей и изменяет метку времени
     def _reset_parser(self) -> None:
+        '''
+        перезагружает память парсера, чтобы он работал бесконечно
+        '''
         self._competitions_all = []
         self.start_time = time.time()        
         self._logger.warning("Pareser is reseted")

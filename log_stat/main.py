@@ -2,65 +2,91 @@ import pandas as pd # для удобной работы с логами
 import ujson as json # для упаковки/распаковки объектов
 from pathlib import Path # для проверки путей
 from modules.logger import Logger
+import os # для путей логов
 
 # используется одна из функций pd, из старых версий
 import warnings
 warnings.filterwarnings('ignore', category=FutureWarning)
 
-# получение конфига
 def get_config() -> dict:
+    '''
+    получает конфигурацию программы
+    :return: словарь конфигурации
+    '''
     with open("./config.json") as config:
         config = json.loads(config.read())
     return config
 
-# получение общего датасета из файла
-def get_data_from_excel(path:Path, logger) -> pd.DataFrame or None:
-    try:
-        df = pd.read_excel(path)
-        return df 
-    except Exception as e:
-        logger.error(f"Error while openning excel database, {e}")
-        return None
+def get_data(path:str) -> pd.DataFrame | None:
+    '''  
+    получает всю информацию из папки с логами и объединяет ее в один объект
+    :param path: путь к папке с логами
+    :return: датафрейм или ничего
+    '''
+    header = ["time", "id", "scheduled", "player_1", "player_2", "home_score_per_1", "away_score_per_1", "home_score", "away_score"]
+    main_df = pd.DataFrame(columns=header)
+    ids = []
+    for file in os.listdir(path):
+        file_path = path + file 
+        df = pd.read_csv(file_path, delimiter=";", header=None, names=header)
+        for _, row in df.iterrows():
+            if row["id"] not in ids: # создание новой строчки
+                main_df = pd.concat([main_df, row.to_frame().T], ignore_index=True)
+                ids.append(row["id"])
+            else: # обновление существующей
+                old_row = main_df[main_df['id'] == row["id"]].iloc[0]
+                old_row_index = main_df[main_df['id'] == row["id"]].index[0]
+                keys = ["home_score_per_1", "away_score_per_1", "home_score", "away_score"]
+                for k in keys:
+                    if old_row[k] < row[k]:
+                        main_df.loc[old_row_index, k] = row[k]
+    return main_df
     
-# подсчет кто является победителем в матче
 def winner(row:pd.DataFrame) -> str:
-    if row['res_score_home'] > row['res_score_away']:
+    '''  
+    определяет кто выиграл в матче
+    :param row: датафрейм с матчем
+    :return: имя победившей команды или draw (ничья)
+    '''
+    if row['home_score'] > row['away_score']:
         return row['player_1']
-    elif row['res_score_home'] < row['res_score_away']:
+    elif row['home_score'] < row['away_score']:
         return row['player_2']
     else:
         return 'draw'
     
-# подсчет строчки: команда_1, команда_2, кол_во_побед_1, кол_во_побед_2, кол_во_ничьих
 def count_wins(group:pd.DataFrame) -> pd.Series:
+    '''  
+    считает кол-во подеб в рамках группы (одни и те же участники)
+    :param group: группа матчей с одиними и теми же участниками
+    :return: датафрейм с подсчитанными победами и ничьими
+    '''
     team1, team2 = group.name
     wins_team_1 = ((group['winner'] == team1)).sum()
     wins_team_2 = ((group['winner'] == team2)).sum()
     draws = ((group['winner'] == 'draw')).sum()
-    return pd.Series({'team1': team1, 'team2': team2, 'wins_team_1': wins_team_1, 'wins_team_2': wins_team_2, 'draws': draws})
+    all = wins_team_1 + wins_team_2 + draws
+    return pd.Series({'team1': team1, 'team2': team2, 'all': all, 'wins_team_1': wins_team_1, 'wins_team_2': wins_team_2, 'draws': draws})
 
-# основной класс
 class Log_stat():
+    '''  
+    главный класс подсчета статистики
+    '''
     def __init__(self):
         self._config = get_config()
         self._logger = Logger(
             logger_name="log_stat",
             log_to_file=self._config["log_to_file"]
         ).logger
-
-    # получение пути к файлу лога
-    def _get_file_path(self) -> Path or None:
-        file_path = Path(input("Enter file path: "))
-        if file_path.exists():
-            return file_path
-        else:
-            self._logger.error("Path doesn't exist")
-            return None
     
-    # расчет статистики
     def _stat_df(self, df:pd.DataFrame) -> None:
+        '''  
+        считает статистику по всему файлу бд
+        '''
         df["team_group"] = df.apply(lambda row: tuple(sorted([row['player_1'], row['player_2']])), axis=1)
         df["winner"] = df.apply(winner, axis=1)
+        df["id"] = df["id"].astype(str)
+        df.to_excel("merge.xlsx")
         group_df = df.groupby('team_group')
         counter_df = group_df.apply(count_wins).reset_index(drop=True)
         counter_df.to_excel("./test.xlsx")
@@ -79,15 +105,10 @@ class Log_stat():
             print("-"*20)
         return
 
-    # точка входа в исполнение класса
     def main(self) -> None:
-        file_path = self._get_file_path()
-        if file_path:
-            df = get_data_from_excel(path=file_path, logger=self._logger)
-            if not df.empty:
-                self._stat_df(df=df)        
-            else:
-                return
+        df = get_data(path=self._config["path_to_logs"])
+        if not df.empty:
+            self._stat_df(df=df)        
         else:
             return
 
