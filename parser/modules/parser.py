@@ -20,6 +20,7 @@ class URL_Parser():
         self._competitions_all = []
         self._connection_timeout = connection_timeout
         self._log_is_start = False
+        self._leages = {}
         self.start_time = time.time()
         self.time_for_reset = time_for_reset
         return 
@@ -96,33 +97,31 @@ class URL_Parser():
             self._logger.error(f"Error while connecting with remote host. Bad connection, {e}")
             return None
 
+        if "tournaments" in url_data.keys():
+            for t_key in url_data["tournaments"].keys():
+                self._leages[t_key] = url_data["tournaments"][t_key]["name"]
+
         # проверка на наличие поля
-        if "sports" in url_data.keys():
-            sport_keys = []
-            for key in url_data["sports"]:
-                if "esoccer" in url_data["sports"][key]["name"].lower(): # берем только спорт-категории с присутствующим словом eSoccer
-                    sport_keys.append(key)
+        if "events" in url_data.keys():
             for event_id in url_data["events"].keys(): # в events хранится информация о матчах
                 event = url_data["events"][event_id]
                 is_this_event = self._is_this_event(event_id=event_id)
-                competition = { # итоговый объект для сохранения в БД
-                    "time": datetime.now(),
-                    "id": event_id, # айди матча
-                    "scheduled": None, # время старта
-                    "player_1": None, # игрок 1
-                    "player_2": None, # игрок 2
-                    "score_per_1_home": -1, # голов у первой команды после 1 тайма
-                    "score_per_1_away": -1, # голов у второй команды после 1 тайма
-                    "res_score_home": -1, # голов у первой команды после игры
-                    "res_score_away": -1, # голов у второй команды после игры
-                }
-                if event and ("desc" in event.keys()) and (event["desc"]["sport"] in sport_keys): # в desc хранится описание матча - кто играет и на какое время запланировано
-                    competition["scheduled"] = datetime.fromtimestamp(event["desc"]["scheduled"]).strftime("%Y-%m-%d %H:%M:%S")
-                    competition['player_1'] = event["desc"]["competitors"][0]["name"]
-                    competition["player_2"] = event["desc"]["competitors"][1]["name"]
+                if event and ("desc" in event.keys()) and (event["desc"]["sport"] == "300"): # в desc хранится описание матча - кто играет и на какое время запланировано
+                    # print(json.dumps(event, indent=2), "\n")
+                    competition = { # итоговый объект для сохранения в БД
+                        "time": datetime.now(),
+                        "id": event_id, # айди матча
+                        "leage": event["desc"]["tournament"],
+                        "scheduled": datetime.fromtimestamp(event["desc"]["scheduled"]).strftime("%Y-%m-%d %H:%M:%S"), # время старта
+                        "player_1": event["desc"]["competitors"][0]["name"], # игрок 1
+                        "player_2": event["desc"]["competitors"][1]["name"], # игрок 2
+                        "score_per_1_home": 0, # голов у первой команды после 1 тайма
+                        "score_per_1_away": 0, # голов у второй команды после 1 тайма
+                        "res_score_home": 0, # голов у первой команды после игры
+                        "res_score_away": 0, # голов у второй команды после игры
+                    }
                     if is_this_event is None:
-                        self._competitions_all.append(competition)
-                        
+                        self._competitions_all.append(competition) 
                 
                 # обработка голов
                 if event and ("score" in event.keys()) and (is_this_event):
@@ -133,6 +132,10 @@ class URL_Parser():
                     self._competitions_all[is_this_event]["res_score_away"] = int(event["score"]["away_score"])    
         return None
     
+    def check_leage(self, leage:str) -> str:
+        if self._leages[leage]:
+            return self._leages[leage]
+    
     def write_log(self,  data:list) -> None:
         '''
         Записывает собранную информацию в журнал - лог
@@ -141,7 +144,7 @@ class URL_Parser():
         self._logger.warning("Log saving is started. Don't close the program")
         
         csv_path = f"./res_logs/parser_results_{self.start_time}.csv"
-        headers = ["time", "id", "scheduled", "player_1", "player_2", "score_per_1_home", "score_per_1_away", "res_score_home", "res_score_away"]
+        headers = ["time", "id", "scheduled", "leage", "player_1", "player_2", "score_per_1_home", "score_per_1_away", "res_score_home", "res_score_away"]
         
         log_dict = {h: [d.get(h) for d in data] for h in headers}
         df = pd.DataFrame(log_dict)
@@ -149,6 +152,7 @@ class URL_Parser():
         df["time"] = pd.to_datetime(df["time"])
         df["scheduled"] = pd.to_datetime(df["scheduled"])
         df = df.sort_values("scheduled")
+        df["leage"] = df["leage"].apply(self.check_leage)
 
         df.to_csv(
             csv_path,
